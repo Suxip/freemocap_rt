@@ -1,0 +1,26 @@
+# === Virtual Environments ===
+fmc_env/
+venv/
+.venv/
+env/
+
+# === Python Cache & Compiled Files ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# === Operating System Files ===
+.DS_Store
+Thumbs.db
+
+# === FreeMoCap Data & Recording Outputs ===
+*skelly-cam-recordings/
+*.mp4
+*.sub
+*.log
+
+# === IDEs and Editors ===
+.vscode/
+.idea/

@@ -1,0 +1,34 @@
+[flake8]
+root = ./freemocap
+exclude = 
+    ./freemocap/core_processes/export_data/blender_stuff/export_to_blender/methods/legacy/*
+    ./freemocap/core_processes/capture_volume_calibration/anipose_camera_calibration/anipose_camera_calibrator.py
+    ./freemocap/core_processes/capture_volume_calibration/anipose_camera_calibration/freemocap_anipose.py
+    ./experimental
+    ./freemocap/tests
+    ./.nox
+    ./.venv
+    ./venv
+
+per-file-ignores = 
+    ./freemocap/core_processes/process_motion_capture_videos/process_recording_folder.py:C901
+    ./freemocap/core_processes/export_data/blender_stuff/export_to_blender/methods/ajc_addon/run_ajc_addon_main.py:C901
+    ./freemocap/gui/qt/widgets/control_panel/calibration_control_panel.py:C901
+    ./experimental/batch_process/batch_process.py:E226
+# C901: function is too complex
+# E226: missing whitespace around arithmetic operator (file slashes misread as arithmetic)
+
+max-line-length = 88
+
+extend-ignore = W503, E501, E402, S404, S603, S607, S101
+# W503: Linebreak before binary operator
+# E501: Line too long
+# E402: Modulo level import not at top of file
+# S101: Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+# S404: Consider possible security implications associated with the subprocess module.
+# S603: S603 subprocess call - check for execution of untrusted input.
+# S607 Starting a process with a partial executable path
+
+select = B,C,E,F,S,W
+
+max-complexity = 10

@@ -1,0 +1,13 @@
+include LICENSE
+include requirements.txt
+
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+
+include bin/*
+include assets*
+include *.md
+
+# If including data files in the package, add them like:
+# include path/to/data_file
+
