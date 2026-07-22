@@ -69,6 +69,7 @@ from freemocap.gui.qt.widgets.welcome_screen_dialog import WelcomeScreenDialog
 from freemocap.gui.qt.workers.download_sample_data_thread_worker import DownloadDataThreadWorker
 from freemocap.gui.qt.workers.export_to_blender_thread_worker import ExportToBlenderThreadWorker
 from freemocap.gui.qt.workers.realtime_mocap_worker import RealtimeMocapWorker
+from freemocap.gui.qt.workers.realtime_preview_writer import RealtimePreviewWriter
 # reboot GUI method based on this - https://stackoverflow.com/a/56563926/14662833
 from freemocap.system.open_file import open_file
 from freemocap.system.paths_and_filenames.file_and_folder_names import (
@@ -119,6 +120,7 @@ class MainWindow(QMainWindow):
 
         self._kill_thread_event = multiprocessing.Event()
         self._realtime_worker = None
+        self._realtime_preview_writer = None
         self._realtime_processing_active = False
         self._realtime_camera_id = None
 
@@ -214,6 +216,7 @@ class MainWindow(QMainWindow):
         self._realtime_worker.frame_processed_signal.connect(self._skelly_viewer_widget.update_live_frame)
         self._realtime_worker.processing_error_signal.connect(self._skelly_viewer_widget.show_live_error)
         self._realtime_worker.start()
+        self._start_realtime_preview_writer()
         self._realtime_camera_id = None
         self._realtime_processing_active = True
         self._skelly_viewer_widget.start_live()
@@ -222,8 +225,9 @@ class MainWindow(QMainWindow):
 
     def _stop_realtime_processing(self):
         self._realtime_processing_active = False
-        self._skelly_viewer_widget.stop_live()
         self._stop_realtime_worker()
+        self._stop_realtime_preview_writer()
+        self._skelly_viewer_widget.stop_live()
         logger.info("Stopped real-time tracking and visualization")
 
     def _stop_realtime_worker(self):
@@ -233,6 +237,36 @@ class MainWindow(QMainWindow):
                 return
             self._realtime_worker.deleteLater()
             self._realtime_worker = None
+
+    def _start_realtime_preview_writer(self):
+        self._stop_realtime_preview_writer()
+        active_recording = self._active_recording_info_widget.get_active_recording_info()
+        if active_recording is None:
+            logger.warning("Cannot save real-time preview because there is no active recording")
+            return
+        output_folder = Path(active_recording.realtime_preview_folder_path)
+        output_path = output_folder / f"{active_recording.name}_realtime_preview.mp4"
+        self._realtime_preview_writer = RealtimePreviewWriter(output_path=output_path, parent=self)
+        self._realtime_preview_writer.preview_saved_signal.connect(
+            lambda path: logger.info(f"Real-time preview saved: {path}")
+        )
+        self._realtime_preview_writer.writing_error_signal.connect(
+            lambda error: logger.error(f"Real-time preview could not be saved: {error}")
+        )
+        self._realtime_preview_writer.start()
+
+    def _write_realtime_preview_frame(self, image):
+        if self._realtime_preview_writer is not None:
+            self._realtime_preview_writer.submit_frame(image)
+
+    def _stop_realtime_preview_writer(self):
+        if self._realtime_preview_writer is None:
+            return
+        if not self._realtime_preview_writer.stop():
+            logger.warning("Real-time preview writer did not stop within 15 seconds")
+            return
+        self._realtime_preview_writer.deleteLater()
+        self._realtime_preview_writer = None
 
     @Slot(str, object)
     def _handle_live_camera_image(self, camera_id: str, image):
@@ -300,6 +334,7 @@ class MainWindow(QMainWindow):
         center_tab_widget.set_visualize_data_tab_enabled(True)
 
         self._skellycam_widget.live_image_signal.connect(self._handle_live_camera_image)
+        self._skelly_viewer_widget.composite_frame_ready_signal.connect(self._write_realtime_preview_frame)
         self._controller_group_box.motion_capture_recording_started.connect(self._start_realtime_processing)
         self._controller_group_box.recording_stopped.connect(self._stop_realtime_processing)
 
@@ -439,6 +474,7 @@ class MainWindow(QMainWindow):
         logger.info("Killing running threads and processes... ")
         self._realtime_processing_active = False
         self._stop_realtime_worker()
+        self._stop_realtime_preview_writer()
         try:
             self._skellycam_widget.close()
         except Exception as e:

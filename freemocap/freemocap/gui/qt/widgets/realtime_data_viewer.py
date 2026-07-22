@@ -1,5 +1,5 @@
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QSplitter, QStackedLayout, QVBoxLayout, QWidget
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -14,6 +14,8 @@ except ImportError:
 
 class RealtimeDataViewer(QWidget):
     """Offline SkellyViewer plus a live annotated-video and pose display."""
+
+    composite_frame_ready_signal = Signal(QImage)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -58,6 +60,9 @@ class RealtimeDataViewer(QWidget):
             )
         )
         self._update_pose(pose_xyz)
+        # Capture the same side-by-side widget the user sees. The writer owns a
+        # copy so the GUI can safely repaint immediately afterward.
+        self.composite_frame_ready_signal.emit(self._live_viewer.grab().toImage().copy())
 
     def show_live_error(self, message: str) -> None:
         self._live_video_label.setText(f"Real-time processing error: {message}")
@@ -95,4 +100,6 @@ class RealtimeDataViewer(QWidget):
                 [depth[start], depth[end]],
                 [height[start], height[end]],
             )
-        self._canvas.draw_idle()
+        # Render now so the composite capture contains this frame's graph rather
+        # than the graph from the previous event-loop iteration.
+        self._canvas.draw()

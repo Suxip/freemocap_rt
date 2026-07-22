@@ -14,6 +14,7 @@ from freemocap.system.paths_and_filenames.file_and_folder_names import (
     REPROJECTION_ERROR_NPY_FILE_NAME,
     SYNCHRONIZED_VIDEOS_FOLDER_NAME,
     ANNOTATED_VIDEOS_FOLDER_NAME,
+    REALTIME_PREVIEW_FOLDER_NAME,
     DATA_3D_NPY_FILE_NAME,
     OLD_DATA_2D_NPY_FILE_NAME,
     OLD_DATA_3D_NPY_FILE_NAME,
@@ -111,6 +112,10 @@ class RecordingInfoModel:
     @property
     def annotated_videos_folder_path(self) -> str:
         return str(Path(self._path) / ANNOTATED_VIDEOS_FOLDER_NAME)
+
+    @property
+    def realtime_preview_folder_path(self) -> str:
+        return str(Path(self._path) / REALTIME_PREVIEW_FOLDER_NAME)
 
     @property
     def data_2d_npy_file_path(self):

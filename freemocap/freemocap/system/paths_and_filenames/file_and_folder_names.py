@@ -14,6 +14,7 @@ LOG_FILE_FOLDER_NAME = "logs"
 OUTPUT_DATA_FOLDER_NAME = "output_data"
 SYNCHRONIZED_VIDEOS_FOLDER_NAME = "synchronized_videos"
 ANNOTATED_VIDEOS_FOLDER_NAME = "annotated_videos"
+REALTIME_PREVIEW_FOLDER_NAME = "realtime_preview"
 RAW_DATA_FOLDER_NAME = "raw_data"
 CENTER_OF_MASS_FOLDER_NAME = "center_of_mass"
 
