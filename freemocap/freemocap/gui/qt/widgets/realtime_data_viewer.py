@@ -76,9 +76,13 @@ class RealtimeDataViewer(QWidget):
 
     def _initialize_plot(self) -> None:
         self._axes.set_title("Live pose")
+        self._axes.set_proj_type("ortho")
+        self._axes.view_init(elev=0, azim=-90, roll=0)
+
         self._axes.set_xlim(-0.75, 0.75)
         self._axes.set_ylim(-0.75, 0.75)
         self._axes.set_zlim(0.0, 1.5)
+        
         self._axes.set_xlabel("X")
         self._axes.set_ylabel("Depth")
         self._axes.set_zlabel("Height")
