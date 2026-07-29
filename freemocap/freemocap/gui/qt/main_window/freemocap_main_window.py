@@ -255,9 +255,13 @@ class MainWindow(QMainWindow):
         )
         self._realtime_preview_writer.start()
 
-    def _write_realtime_preview_frame(self, image):
+    def _write_realtime_preview_frame(self, image, raw_pose_xyz, filtered_plot_image):
         if self._realtime_preview_writer is not None:
-            self._realtime_preview_writer.submit_frame(image)
+            self._realtime_preview_writer.submit_frame(
+                image,
+                raw_pose_xyz,
+                filtered_plot_image,
+            )
 
     def _stop_realtime_preview_writer(self):
         if self._realtime_preview_writer is None:

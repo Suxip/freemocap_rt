@@ -15,7 +15,7 @@ except ImportError:
 class RealtimeDataViewer(QWidget):
     """Offline SkellyViewer plus a live annotated-video and pose display."""
 
-    composite_frame_ready_signal = Signal(QImage)
+    composite_frame_ready_signal = Signal(QImage, object, QImage)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -50,7 +50,12 @@ class RealtimeDataViewer(QWidget):
     def show_offline(self) -> None:
         self._stack.setCurrentWidget(self._offline_viewer)
 
-    def update_live_frame(self, image: QImage, pose_xyz: np.ndarray) -> None:
+    def update_live_frame(
+        self,
+        image: QImage,
+        raw_pose_xyz: np.ndarray,
+        filtered_pose_xyz: np.ndarray,
+    ) -> None:
         pixmap = QPixmap.fromImage(image)
         self._live_video_label.setPixmap(
             pixmap.scaled(
@@ -59,10 +64,12 @@ class RealtimeDataViewer(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
-        self._update_pose(pose_xyz)
-        # Capture the same side-by-side widget the user sees. The writer owns a
-        # copy so the GUI can safely repaint immediately afterward.
-        self.composite_frame_ready_signal.emit(self._live_viewer.grab().toImage().copy())
+        self._update_pose(filtered_pose_xyz)
+        self.composite_frame_ready_signal.emit(
+            image.copy(),
+            raw_pose_xyz.copy(),
+            self._matplotlib_canvas_to_image(self._canvas),
+        )
 
     def show_live_error(self, message: str) -> None:
         self._live_video_label.setText(f"Real-time processing error: {message}")
@@ -107,3 +114,15 @@ class RealtimeDataViewer(QWidget):
         # Render now so the composite capture contains this frame's graph rather
         # than the graph from the previous event-loop iteration.
         self._canvas.draw()
+
+    @staticmethod
+    def _matplotlib_canvas_to_image(canvas: FigureCanvasQTAgg) -> QImage:
+        rgba = np.asarray(canvas.buffer_rgba())
+        height, width, channels = rgba.shape
+        return QImage(
+            rgba.data,
+            width,
+            height,
+            channels * width,
+            QImage.Format.Format_RGBA8888,
+        ).copy()

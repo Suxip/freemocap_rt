@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class RealtimeMocapWorker(QThread):
     """Track only the newest camera frame so the GUI cannot accumulate lag."""
 
-    frame_processed_signal = Signal(QImage, object)
+    frame_processed_signal = Signal(QImage, object, object)
     processing_error_signal = Signal(str)
 
     def __init__(self, parent=None):
@@ -74,11 +74,17 @@ class RealtimeMocapWorker(QThread):
                 bgr_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
                 tracked_objects = tracker.process_image(bgr_image)
                 pose_landmarks = tracked_objects["pose_landmarks"].extra["landmarks"]
-                pose_xyz = self._pose_to_array(pose_landmarks)
-                pose_xyz = one_euro_filter.process_frame(gap_filler.process_frame(pose_xyz))
+                raw_pose_xyz = self._pose_to_array(pose_landmarks)
+                filtered_pose_xyz = one_euro_filter.process_frame(
+                    gap_filler.process_frame(raw_pose_xyz.copy())
+                )
                 annotated_rgb = cv2.cvtColor(tracker.annotated_image, cv2.COLOR_BGR2RGB)
                 annotated_qimage = self._rgb_array_to_qimage(annotated_rgb)
-                self.frame_processed_signal.emit(annotated_qimage, pose_xyz)
+                self.frame_processed_signal.emit(
+                    annotated_qimage,
+                    raw_pose_xyz,
+                    filtered_pose_xyz,
+                )
         except Exception as error:
             logger.exception("Real-time motion capture failed")
             self.processing_error_signal.emit(str(error))
