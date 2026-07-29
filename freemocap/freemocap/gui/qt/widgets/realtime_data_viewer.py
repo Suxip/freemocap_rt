@@ -6,6 +6,8 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from skelly_viewer import SkellyViewer
 
+from freemocap.gui.qt.utilities.realtime_pose_plot import configure_realtime_pose_axes
+
 try:
     from mediapipe.python.solutions.pose import POSE_CONNECTIONS
 except ImportError:
@@ -82,17 +84,7 @@ class RealtimeDataViewer(QWidget):
         self._offline_viewer.generate_video_display(video_folder_path)
 
     def _initialize_plot(self) -> None:
-        self._axes.set_title("Live pose")
-        self._axes.set_proj_type("ortho")
-        self._axes.view_init(elev=0, azim=-90, roll=0)
-
-        self._axes.set_xlim(-0.75, 0.75)
-        self._axes.set_ylim(-0.75, 0.75)
-        self._axes.set_zlim(0.0, 1.5)
-        
-        self._axes.set_xlabel("X")
-        self._axes.set_ylabel("Depth")
-        self._axes.set_zlabel("Height")
+        configure_realtime_pose_axes(self._axes, title="Live pose")
         self._points = self._axes.scatter([], [], [], s=12)
         self._bones = [self._axes.plot([], [], [], linewidth=2)[0] for _ in POSE_CONNECTIONS]
 

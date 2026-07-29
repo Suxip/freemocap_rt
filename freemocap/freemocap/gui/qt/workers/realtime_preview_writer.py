@@ -10,6 +10,9 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QImage
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import proj3d
+
+from freemocap.gui.qt.utilities.realtime_pose_plot import configure_realtime_pose_axes
 
 try:
     from mediapipe.python.solutions.pose import POSE_CONNECTIONS
@@ -150,37 +153,36 @@ class RealtimePreviewWriter(QThread):
         figure = Figure(figsize=(6.4, 4.8), dpi=100)
         canvas = FigureCanvasAgg(figure)
         axes = figure.add_subplot(111, projection="3d")
-        axes.set_title("Raw MediaPipe pose")
-        axes.set_proj_type("ortho")
-        axes.view_init(elev=0, azim=-90, roll=0)
-        axes.set_xlim(-0.75, 0.75)
-        axes.set_ylim(-0.75, 0.75)
-        axes.set_zlim(0.0, 1.5)
-        axes.set_xlabel("X")
-        axes.set_ylabel("Depth")
-        axes.set_zlabel("Height")
+        configure_realtime_pose_axes(axes, title="Raw MediaPipe pose")
         canvas.draw()
         rgba = np.asarray(canvas.buffer_rgba())
         background = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
-        return background, axes.bbox.bounds
+        return background, axes
 
     @staticmethod
     def _render_raw_pose(raw_plot_template, pose_xyz: np.ndarray) -> np.ndarray:
-        background, axes_bounds = raw_plot_template
+        background, axes = raw_plot_template
         frame = background.copy()
         if pose_xyz.shape != (33, 3) or not np.isfinite(pose_xyz).any():
             return frame
 
-        # With the same front orthographic view as the filtered plot, X maps
-        # horizontally and height maps vertically. MediaPipe depth points into
-        # the screen, so it does not change this particular camera projection.
+        # Apply the same coordinate mapping and Matplotlib 3D projection used by
+        # the filtered graph. Only the final raster drawing uses OpenCV.
         x = pose_xyz[:, 0] - 0.5
+        depth = -pose_xyz[:, 2]
         height = 1.0 - pose_xyz[:, 1]
-        axes_x, axes_y, axes_width, axes_height = axes_bounds
+        projected_x, projected_y, _ = proj3d.proj_transform(
+            x,
+            depth,
+            height,
+            axes.get_proj(),
+        )
+        display_points = axes.transData.transform(
+            np.column_stack((projected_x, projected_y))
+        )
         image_height = frame.shape[0]
-        pixel_x = axes_x + (x + 0.75) / 1.5 * axes_width
-        pixel_y = image_height - (axes_y + height / 1.5 * axes_height)
-        pixel_points = np.column_stack((pixel_x, pixel_y))
+        pixel_points = display_points
+        pixel_points[:, 1] = image_height - pixel_points[:, 1]
         valid = np.isfinite(pixel_points).all(axis=1)
         line_color = (180, 119, 31)
 
