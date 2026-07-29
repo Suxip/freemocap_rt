@@ -53,6 +53,10 @@ class RealtimePreviewWriter(QThread):
         # this static matching background once, before the worker starts, then
         # draw changing raw landmarks onto it with OpenCV in the worker.
         self._raw_plot_template = self._create_raw_pose_plot_template()
+        self._raw_plot_template_size = (
+            self._raw_plot_template[0].shape[1],
+            self._raw_plot_template[0].shape[0],
+        )
 
     def submit_frame(
         self,
@@ -61,12 +65,23 @@ class RealtimePreviewWriter(QThread):
         filtered_plot_image: QImage,
     ) -> None:
         if not self._stop_requested.is_set():
+            filtered_plot_size = (
+                filtered_plot_image.width(),
+                filtered_plot_image.height(),
+            )
+            if filtered_plot_size != self._raw_plot_template_size:
+                self._raw_plot_template = self._create_raw_pose_plot_template(
+                    width=filtered_plot_size[0],
+                    height=filtered_plot_size[1],
+                )
+                self._raw_plot_template_size = filtered_plot_size
             self._frames.put(
                 (
                     time.monotonic() - self._recording_started_at,
                     annotated_image.copy(),
                     np.asarray(raw_pose_xyz, dtype=float).copy(),
                     filtered_plot_image.copy(),
+                    self._raw_plot_template,
                 )
             )
 
@@ -88,12 +103,13 @@ class RealtimePreviewWriter(QThread):
                         annotated_image,
                         raw_pose_xyz,
                         filtered_plot_image,
+                        raw_plot_template,
                     ) = self._frames.get(timeout=0.05)
                 except queue.Empty:
                     continue
 
                 raw_plot_frame = self._render_raw_pose(
-                    self._raw_plot_template,
+                    raw_plot_template,
                     raw_pose_xyz,
                 )
                 frame = self._compose_three_panel_frame(
@@ -149,8 +165,9 @@ class RealtimePreviewWriter(QThread):
         return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
     @staticmethod
-    def _create_raw_pose_plot_template():
-        figure = Figure(figsize=(6.4, 4.8), dpi=100)
+    def _create_raw_pose_plot_template(width: int = 640, height: int = 480):
+        dpi = 100
+        figure = Figure(figsize=(width / dpi, height / dpi), dpi=dpi)
         canvas = FigureCanvasAgg(figure)
         axes = figure.add_subplot(111, projection="3d")
         configure_realtime_pose_axes(axes, title="Raw MediaPipe pose")
