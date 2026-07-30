@@ -57,24 +57,43 @@ class RealtimePreviewWriter(QThread):
             self._raw_plot_template[0].shape[1],
             self._raw_plot_template[0].shape[0],
         )
+        self._raw_plot_template_dpi = 100.0
+        self._video_title_overlay = self._create_title_overlay(
+            width=self._raw_plot_template_size[0],
+            height=self._raw_plot_template_size[1],
+            dpi=self._raw_plot_template_dpi,
+            title="Video Recording",
+        )
 
     def submit_frame(
         self,
         annotated_image: QImage,
         raw_pose_xyz: np.ndarray,
         filtered_plot_image: QImage,
+        filtered_plot_dpi: float,
     ) -> None:
         if not self._stop_requested.is_set():
             filtered_plot_size = (
                 filtered_plot_image.width(),
                 filtered_plot_image.height(),
             )
-            if filtered_plot_size != self._raw_plot_template_size:
+            if (
+                filtered_plot_size != self._raw_plot_template_size
+                or filtered_plot_dpi != self._raw_plot_template_dpi
+            ):
                 self._raw_plot_template = self._create_raw_pose_plot_template(
                     width=filtered_plot_size[0],
                     height=filtered_plot_size[1],
+                    dpi=filtered_plot_dpi,
                 )
                 self._raw_plot_template_size = filtered_plot_size
+                self._raw_plot_template_dpi = filtered_plot_dpi
+                self._video_title_overlay = self._create_title_overlay(
+                    width=filtered_plot_size[0],
+                    height=filtered_plot_size[1],
+                    dpi=filtered_plot_dpi,
+                    title="Video Recording",
+                )
             self._frames.put(
                 (
                     time.monotonic() - self._recording_started_at,
@@ -82,6 +101,7 @@ class RealtimePreviewWriter(QThread):
                     np.asarray(raw_pose_xyz, dtype=float).copy(),
                     filtered_plot_image.copy(),
                     self._raw_plot_template,
+                    self._video_title_overlay,
                 )
             )
 
@@ -104,6 +124,7 @@ class RealtimePreviewWriter(QThread):
                         raw_pose_xyz,
                         filtered_plot_image,
                         raw_plot_template,
+                        video_title_overlay,
                     ) = self._frames.get(timeout=0.05)
                 except queue.Empty:
                     continue
@@ -112,10 +133,16 @@ class RealtimePreviewWriter(QThread):
                     raw_plot_template,
                     raw_pose_xyz,
                 )
+                filtered_plot_frame = self._qimage_to_bgr_array(filtered_plot_image)
+                annotated_frame = self._place_on_white_canvas_to_match(
+                    self._qimage_to_bgr_array(annotated_image),
+                    filtered_plot_frame=filtered_plot_frame,
+                    title_overlay=video_title_overlay,
+                )
                 frame = self._compose_three_panel_frame(
-                    annotated_frame=self._qimage_to_bgr_array(annotated_image),
+                    annotated_frame=annotated_frame,
                     raw_plot_frame=raw_plot_frame,
-                    filtered_plot_frame=self._qimage_to_bgr_array(filtered_plot_image),
+                    filtered_plot_frame=filtered_plot_frame,
                     output_size=self.output_size,
                 )
                 if writer is None:
@@ -165,8 +192,11 @@ class RealtimePreviewWriter(QThread):
         return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
     @staticmethod
-    def _create_raw_pose_plot_template(width: int = 640, height: int = 480):
-        dpi = 100
+    def _create_raw_pose_plot_template(
+        width: int = 640,
+        height: int = 480,
+        dpi: float = 100.0,
+    ):
         figure = Figure(figsize=(width / dpi, height / dpi), dpi=dpi)
         canvas = FigureCanvasAgg(figure)
         axes = figure.add_subplot(111, projection="3d")
@@ -175,6 +205,26 @@ class RealtimePreviewWriter(QThread):
         rgba = np.asarray(canvas.buffer_rgba())
         background = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
         return background, axes
+
+    @staticmethod
+    def _create_title_overlay(
+        width: int,
+        height: int,
+        dpi: float,
+        title: str,
+    ) -> np.ndarray:
+        figure = Figure(
+            figsize=(width / dpi, height / dpi),
+            dpi=dpi,
+            facecolor=(0.0, 0.0, 0.0, 0.0),
+        )
+        canvas = FigureCanvasAgg(figure)
+        axes = figure.add_subplot(111, projection="3d")
+        configure_realtime_pose_axes(axes, title=title)
+        axes.set_axis_off()
+        axes.patch.set_alpha(0.0)
+        canvas.draw()
+        return np.asarray(canvas.buffer_rgba()).copy()
 
     @staticmethod
     def _render_raw_pose(raw_plot_template, pose_xyz: np.ndarray) -> np.ndarray:
@@ -265,3 +315,29 @@ class RealtimePreviewWriter(QThread):
             (resized_width, resized_height),
             interpolation=interpolation,
         )
+
+    @classmethod
+    def _place_on_white_canvas_to_match(
+        cls,
+        frame: np.ndarray,
+        filtered_plot_frame: np.ndarray,
+        title_overlay: np.ndarray,
+    ) -> np.ndarray:
+        """Center a video frame on a graph-sized white canvas without distortion."""
+        canvas_height, canvas_width = filtered_plot_frame.shape[:2]
+        canvas = np.full((canvas_height, canvas_width, 3), 255, dtype=np.uint8)
+        fitted = cls._fit_inside_panel(frame, canvas_width, canvas_height)
+        fitted_height, fitted_width = fitted.shape[:2]
+        x_offset = (canvas_width - fitted_width) // 2
+        y_offset = (canvas_height - fitted_height) // 2
+        canvas[
+            y_offset : y_offset + fitted_height,
+            x_offset : x_offset + fitted_width,
+        ] = fitted
+        overlay_bgr = cv2.cvtColor(title_overlay, cv2.COLOR_RGBA2BGR)
+        alpha = title_overlay[:, :, 3:4].astype(np.float32) / 255.0
+        canvas = (
+            overlay_bgr.astype(np.float32) * alpha
+            + canvas.astype(np.float32) * (1.0 - alpha)
+        ).astype(np.uint8)
+        return canvas

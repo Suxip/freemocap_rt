@@ -17,7 +17,7 @@ except ImportError:
 class RealtimeDataViewer(QWidget):
     """Offline SkellyViewer plus a live annotated-video and pose display."""
 
-    composite_frame_ready_signal = Signal(QImage, object, QImage)
+    composite_frame_ready_signal = Signal(QImage, object, QImage, float)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -67,10 +67,15 @@ class RealtimeDataViewer(QWidget):
             )
         )
         self._update_pose(filtered_pose_xyz)
+        filtered_plot_image = self._matplotlib_canvas_to_image(self._canvas)
+        effective_dpi = (
+            filtered_plot_image.width() / self._figure.get_figwidth()
+        )
         self.composite_frame_ready_signal.emit(
             image.copy(),
             raw_pose_xyz.copy(),
-            self._matplotlib_canvas_to_image(self._canvas),
+            filtered_plot_image,
+            effective_dpi,
         )
 
     def show_live_error(self, message: str) -> None:
@@ -84,7 +89,7 @@ class RealtimeDataViewer(QWidget):
         self._offline_viewer.generate_video_display(video_folder_path)
 
     def _initialize_plot(self) -> None:
-        configure_realtime_pose_axes(self._axes, title="Live pose")
+        configure_realtime_pose_axes(self._axes, title="Real-time filtered pose")
         self._points = self._axes.scatter([], [], [], s=12)
         self._bones = [self._axes.plot([], [], [], linewidth=2)[0] for _ in POSE_CONNECTIONS]
 
