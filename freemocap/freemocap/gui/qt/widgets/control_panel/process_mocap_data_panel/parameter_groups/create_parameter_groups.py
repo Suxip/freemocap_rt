@@ -8,16 +8,11 @@ from freemocap.data_layer.recording_models.post_processing_parameter_models impo
     AniposeTriangulate3DParametersModel,
     PostProcessingParametersModel,
     OneEuroFilterParametersModel,
-    KalmanFilterParametersModel,
 )
 
 ONE_EURO_MIN_CUTOFF = "Minimum Cutoff Frequency"
 ONE_EURO_BETA = "Speed Coefficient (Beta)"
 ONE_EURO_DERIVATIVE_CUTOFF = "Derivative Cutoff Frequency"
-KALMAN_PROCESS_NOISE = "Kalman Process Noise"
-KALMAN_MEASUREMENT_NOISE = "Kalman Measurement Noise"
-MAX_GAP_TO_FILL = "Maximum Gap to Fill"
-
 POST_PROCESSING_FRAME_RATE = "Framerate"
 
 CAUSAL_POST_PROCESSING_TREE_NAME = "Causal Post Processing"
@@ -242,27 +237,8 @@ def create_post_processing_parameter_group(
                 value=parameter_model.one_euro_filter_parameters.derivative_cutoff,
                 tip="Cutoff frequency used to smooth the estimated derivative.",
             ),
-            dict(
-                name=KALMAN_PROCESS_NOISE,
-                type="float",
-                value=parameter_model.kalman_filter_parameters.process_noise,
-                tip="Higher values allow the Kalman motion model to change faster.",
-            ),
-            dict(
-                name=KALMAN_MEASUREMENT_NOISE,
-                type="float",
-                value=parameter_model.kalman_filter_parameters.measurement_noise,
-                tip="Higher values place less trust in observed marker positions.",
-            ),
-            dict(
-                name=MAX_GAP_TO_FILL,
-                type="int",
-                value=parameter_model.max_gap_to_fill,
-                limits=(0, 10000),
-                tip="Maximum consecutive missing frames predicted by the causal Kalman filter.",
-            ),
         ],
-        tip="Forward-only Kalman gap filling and One Euro smoothing; no future frames are used.",
+        tip="Forward-only One Euro smoothing; no future frames are used.",
     )
 
 
@@ -303,11 +279,6 @@ def extract_parameter_model_from_parameter_tree(
                 beta=parameter_values_dictionary[ONE_EURO_BETA],
                 derivative_cutoff=parameter_values_dictionary[ONE_EURO_DERIVATIVE_CUTOFF],
             ),
-            kalman_filter_parameters=KalmanFilterParametersModel(
-                process_noise=parameter_values_dictionary[KALMAN_PROCESS_NOISE],
-                measurement_noise=parameter_values_dictionary[KALMAN_MEASUREMENT_NOISE],
-            ),
-            max_gap_to_fill=parameter_values_dictionary[MAX_GAP_TO_FILL],
             run_one_euro_filter=parameter_values_dictionary[RUN_ONE_EURO_FILTER_NAME],
         ),
     )

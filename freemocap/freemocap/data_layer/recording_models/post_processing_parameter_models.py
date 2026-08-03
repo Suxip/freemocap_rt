@@ -28,16 +28,9 @@ class OneEuroFilterParametersModel(BaseModel):
     derivative_cutoff: float = 1.0
 
 
-class KalmanFilterParametersModel(BaseModel):
-    process_noise: float = 1.0
-    measurement_noise: float = 10.0
-
-
 class PostProcessingParametersModel(BaseModel):
     framerate: float = 30.0
     one_euro_filter_parameters: OneEuroFilterParametersModel = Field(default_factory=OneEuroFilterParametersModel)
-    kalman_filter_parameters: KalmanFilterParametersModel = Field(default_factory=KalmanFilterParametersModel)
-    max_gap_to_fill: int = 10
     run_one_euro_filter: bool = True
 
 

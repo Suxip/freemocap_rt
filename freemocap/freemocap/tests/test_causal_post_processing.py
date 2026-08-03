@@ -19,7 +19,7 @@ def _sample_data() -> np.ndarray:
 
 def test_causal_post_processing_is_prefix_invariant():
     data = _sample_data()
-    parameters = PostProcessingParametersModel(max_gap_to_fill=5)
+    parameters = PostProcessingParametersModel()
     complete_result = causally_post_process_skeleton(data, parameters)
 
     for stop in range(1, len(data) + 1):
@@ -27,13 +27,12 @@ def test_causal_post_processing_is_prefix_invariant():
         np.testing.assert_allclose(prefix_result, complete_result[:stop], equal_nan=True)
 
 
-def test_kalman_only_fills_up_to_maximum_gap():
+def test_one_euro_does_not_fill_missing_data():
     data = _sample_data()
-    parameters = PostProcessingParametersModel(max_gap_to_fill=2, run_one_euro_filter=False)
-    result = causally_post_process_skeleton(data, parameters)
+    result = causally_post_process_skeleton(data, PostProcessingParametersModel())
 
-    assert np.isfinite(result[5:7, 0, 0]).all()
-    assert np.isnan(result[7, 0, 0])
+    assert np.isnan(result[5:8, 0, 0]).all()
+    assert np.isnan(result[15:30, 0, 1]).all()
     assert np.isnan(result[:3, 0, 2]).all()
 
 

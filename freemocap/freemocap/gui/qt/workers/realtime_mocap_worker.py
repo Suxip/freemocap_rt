@@ -8,7 +8,6 @@ from PySide6.QtGui import QImage
 from skellytracker.trackers.mediapipe_tracker.mediapipe_holistic_tracker import MediapipeHolisticTracker
 
 from freemocap.core_processes.post_process_skeleton_data.causal_post_processing import (
-    KalmanGapFiller,
     OneEuroFilter,
 )
 
@@ -54,13 +53,6 @@ class RealtimeMocapWorker(QThread):
                 static_image_mode=False,
                 smooth_landmarks=False,
             )
-            gap_filler = KalmanGapFiller(
-                shape=(33, 3),
-                sampling_rate=30.0,
-                process_noise=1.0,
-                measurement_noise=10.0,
-                max_gap_to_fill=10,
-            )
             one_euro_filter = OneEuroFilter(
                 shape=(33, 3),
                 sampling_rate=30.0,
@@ -89,7 +81,7 @@ class RealtimeMocapWorker(QThread):
                 pose_landmarks = tracked_objects["pose_landmarks"].extra["landmarks"]
                 raw_pose_xyz = self._pose_to_array(pose_landmarks)
                 filtered_pose_xyz = one_euro_filter.process_frame(
-                    gap_filler.process_frame(raw_pose_xyz.copy())
+                    raw_pose_xyz.copy()
                 )
                 annotated_rgb = cv2.cvtColor(tracker.annotated_image, cv2.COLOR_BGR2RGB)
                 annotated_qimage = self._rgb_array_to_qimage(annotated_rgb)
