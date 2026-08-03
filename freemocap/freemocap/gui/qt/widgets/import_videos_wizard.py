@@ -27,7 +27,10 @@ from skelly_synchronize import create_audio_debug_plots, create_brightness_debug
 from freemocap.gui.qt.workers.synchronize_videos_thread_worker import SynchronizeVideosThreadWorker
 from freemocap.system.open_file import open_file
 from freemocap.system.paths_and_filenames.file_and_folder_names import SYNCHRONIZED_VIDEOS_FOLDER_NAME
-from freemocap.system.paths_and_filenames.path_getters import get_recording_session_folder_path
+from freemocap.system.paths_and_filenames.path_getters import (
+    create_new_default_recording_name,
+    create_new_session_folder,
+)
 from freemocap.utilities.get_video_paths import get_video_paths
 
 no_files_found_string = "No '.mp4' video files found! \n \n Note - We only look for `.mp4` files (for now). If your videos are a different format, convert them to `mp4` via online tools like `www.cloudconvert.com`, or softwares like `HandBrake`, `ffmpeg` or any video editing software"
@@ -68,7 +71,10 @@ class ImportVideosWizard(QDialog):
         self._form_layout.addRow("Synchronize videos:", self._synchronize_videos_checkbox)
         self._form_layout.addRow(self.synchronization_extension)
 
-        self._folder_name = f"import_{Path(import_videos_path).name}"
+        # Imported videos are recordings too, so put them in the same timestamped
+        # session/recording hierarchy used by the New Recording workflow.
+        self._default_folder_name = create_new_default_recording_name()
+        self._folder_name = self._default_folder_name
         self._folder_name_line_edit = QLineEdit(parent=self)
         self._folder_name_line_edit.textChanged.connect(self._handle_folder_name_line_edit_changed)
 
@@ -84,7 +90,11 @@ class ImportVideosWizard(QDialog):
         self._form_layout.addRow(self._continue_button)
 
     def _get_folder_videos_will_be_saved_to(self):
-        return str(Path(get_recording_session_folder_path()) / self._folder_name / SYNCHRONIZED_VIDEOS_FOLDER_NAME)
+        return str(
+            Path(create_new_session_folder())
+            / self._folder_name
+            / SYNCHRONIZED_VIDEOS_FOLDER_NAME
+        )
 
     def _create_import_directory_view(self, import_videos_path: Union[str, Path]):
         self._file_system_model = QFileSystemModel()
@@ -178,7 +188,8 @@ class ImportVideosWizard(QDialog):
         return synchronization_extension
 
     def _handle_folder_name_line_edit_changed(self, event):
-        self._folder_name = self._folder_name_line_edit.text()
+        entered_name = self._folder_name_line_edit.text().strip()
+        self._folder_name = entered_name or self._default_folder_name
         self._folder_where_videos_will_be_saved_to_label.setText(self._get_folder_videos_will_be_saved_to())
 
     def _handle_continue_button_clicked(self, event):

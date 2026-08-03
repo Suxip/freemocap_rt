@@ -26,6 +26,7 @@ class RealtimeMocapWorker(QThread):
         self._condition = threading.Condition()
         self._latest_image = None
         self._should_stop = False
+        self._finish_when_idle = False
 
     def submit_frame(self, image: QImage) -> None:
         with self._condition:
@@ -37,6 +38,12 @@ class RealtimeMocapWorker(QThread):
             self._should_stop = True
             self._condition.notify()
         return self.wait(10000)
+
+    def finish_after_pending_frame(self) -> None:
+        """Finish after processing the newest frame already submitted."""
+        with self._condition:
+            self._finish_when_idle = True
+            self._condition.notify()
 
     def run(self) -> None:
         try:
@@ -63,9 +70,15 @@ class RealtimeMocapWorker(QThread):
             )
             while True:
                 with self._condition:
-                    while self._latest_image is None and not self._should_stop:
+                    while (
+                        self._latest_image is None
+                        and not self._should_stop
+                        and not self._finish_when_idle
+                    ):
                         self._condition.wait()
                     if self._should_stop:
+                        return
+                    if self._latest_image is None and self._finish_when_idle:
                         return
                     image = self._latest_image
                     self._latest_image = None
