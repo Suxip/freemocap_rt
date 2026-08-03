@@ -30,17 +30,17 @@ def post_process_data(
     raw_skel3d_frame_marker_xyz: np.ndarray,
     queue: multiprocessing.Queue,
 ) -> np.ndarray:
-    """Fill gaps with a Kalman filter, then smooth with a causal One Euro filter."""
+    """Fill missing skeleton coordinates with a causal Kalman filter."""
     if queue:
         handler = DirectQueueHandler(queue)
         handler.setFormatter(logging.Formatter(fmt=log_view_logging_format_string, datefmt="%Y-%m-%dT%H:%M:%S"))
         logger.addHandler(handler)
 
-    logger.info("Starting causal Kalman and One Euro post-processing")
+    logger.info("Starting causal Kalman post-processing")
     logger.info(LOG_VIEW_PROGRESS_BAR_STRING)
     processed = causally_post_process_skeleton(
         skeleton_data=raw_skel3d_frame_marker_xyz,
         parameters=recording_processing_parameter_model.post_processing_parameters_model,
     )
-    logger.info("Done with causal gap filling and filtering")
+    logger.info("Done with causal Kalman gap filling")
     return processed

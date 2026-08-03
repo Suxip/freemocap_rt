@@ -54,57 +54,11 @@ class KalmanGapFiller:
 
         self.missing_count[valid] = 0
         self.missing_count[~valid] += 1
-        # Preserve real observations; use the Kalman prediction only where the
-        # observation is missing. Smoothing all observations is the One Euro
-        # filter's responsibility.
+        # Preserve real observations and use the Kalman prediction only where
+        # the observation is missing.
         output[valid] = frame[valid]
         may_predict = ~valid & self.initialized & (self.missing_count <= self.max_gap_to_fill)
         output[may_predict] = self.state[may_predict, 0]
-        return output
-
-
-class OneEuroFilter:
-    """Causal One Euro filter applied independently to every marker coordinate."""
-
-    def __init__(self, shape: tuple[int, int], sampling_rate: float, min_cutoff: float,
-                 beta: float, derivative_cutoff: float):
-        self.dt = 1.0 / sampling_rate
-        self.min_cutoff = min_cutoff
-        self.beta = beta
-        self.derivative_cutoff = derivative_cutoff
-        self.previous_raw = np.full(shape, np.nan)
-        self.previous_filtered = np.full(shape, np.nan)
-        self.previous_derivative = np.zeros(shape, dtype=float)
-
-    def _alpha(self, cutoff):
-        time_constant = 1.0 / (2.0 * np.pi * cutoff)
-        return 1.0 / (1.0 + time_constant / self.dt)
-
-    def process_frame(self, frame: np.ndarray) -> np.ndarray:
-        frame = np.asarray(frame, dtype=float)
-        output = np.full_like(frame, np.nan)
-        valid = np.isfinite(frame)
-        first = valid & ~np.isfinite(self.previous_filtered)
-        output[first] = frame[first]
-
-        continuing = valid & ~first
-        if np.any(continuing):
-            raw_derivative = (frame[continuing] - self.previous_raw[continuing]) / self.dt
-            derivative_alpha = self._alpha(self.derivative_cutoff)
-            derivative = (
-                derivative_alpha * raw_derivative
-                + (1.0 - derivative_alpha) * self.previous_derivative[continuing]
-            )
-            cutoff = self.min_cutoff + self.beta * np.abs(derivative)
-            alpha = self._alpha(cutoff)
-            output[continuing] = (
-                alpha * frame[continuing]
-                + (1.0 - alpha) * self.previous_filtered[continuing]
-            )
-            self.previous_derivative[continuing] = derivative
-
-        self.previous_raw[valid] = frame[valid]
-        self.previous_filtered[valid] = output[valid]
         return output
 
 
@@ -118,7 +72,6 @@ def causally_post_process_skeleton(skeleton_data: np.ndarray, parameters) -> np.
 
     shape = data.shape[1:]
     kalman_parameters = parameters.kalman_filter_parameters
-    one_euro_parameters = parameters.one_euro_filter_parameters
     gap_filler = KalmanGapFiller(
         shape=shape,
         sampling_rate=parameters.framerate,
@@ -126,18 +79,7 @@ def causally_post_process_skeleton(skeleton_data: np.ndarray, parameters) -> np.
         measurement_noise=kalman_parameters.measurement_noise,
         max_gap_to_fill=parameters.max_gap_to_fill,
     )
-    one_euro_filter = OneEuroFilter(
-        shape=shape,
-        sampling_rate=parameters.framerate,
-        min_cutoff=one_euro_parameters.min_cutoff,
-        beta=one_euro_parameters.beta,
-        derivative_cutoff=one_euro_parameters.derivative_cutoff,
-    )
-
     output = np.empty_like(data, dtype=float)
     for frame_number, frame in enumerate(data):
-        processed_frame = gap_filler.process_frame(frame)
-        if parameters.run_one_euro_filter:
-            processed_frame = one_euro_filter.process_frame(processed_frame)
-        output[frame_number] = processed_frame
+        output[frame_number] = gap_filler.process_frame(frame)
     return output

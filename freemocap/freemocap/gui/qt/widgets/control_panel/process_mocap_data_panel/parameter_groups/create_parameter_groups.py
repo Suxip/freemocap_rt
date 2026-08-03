@@ -7,13 +7,9 @@ from freemocap.data_layer.recording_models.post_processing_parameter_models impo
     ProcessingParameterModel,
     AniposeTriangulate3DParametersModel,
     PostProcessingParametersModel,
-    OneEuroFilterParametersModel,
     KalmanFilterParametersModel,
 )
 
-ONE_EURO_MIN_CUTOFF = "Minimum Cutoff Frequency"
-ONE_EURO_BETA = "Speed Coefficient (Beta)"
-ONE_EURO_DERIVATIVE_CUTOFF = "Derivative Cutoff Frequency"
 KALMAN_PROCESS_NOISE = "Kalman Process Noise"
 KALMAN_MEASUREMENT_NOISE = "Kalman Measurement Noise"
 MAX_GAP_TO_FILL = "Maximum Gap to Fill"
@@ -61,8 +57,6 @@ MEDIAPIPE_TREE_NAME = "Mediapipe"
 RUN_IMAGE_TRACKING_NAME = "Run 2d image tracking?"
 
 RUN_3D_TRIANGULATION_NAME = "Run 3d triangulation?"
-
-RUN_ONE_EURO_FILTER_NAME = "Run One Euro filter?"
 
 NUMBER_OF_PROCESSES_PARAMETER_NAME = "Max Number of Processes to Use"
 
@@ -225,24 +219,6 @@ def create_post_processing_parameter_group(
                 tip="Framerate of the recording " "TODO - Calculate this from the recorded timestamps....",
             ),
             dict(
-                name=ONE_EURO_MIN_CUTOFF,
-                type="float",
-                value=parameter_model.one_euro_filter_parameters.min_cutoff,
-                tip="Lower values smooth more but add more lag.",
-            ),
-            dict(
-                name=ONE_EURO_BETA,
-                type="float",
-                value=parameter_model.one_euro_filter_parameters.beta,
-                tip="Increases responsiveness during fast motion.",
-            ),
-            dict(
-                name=ONE_EURO_DERIVATIVE_CUTOFF,
-                type="float",
-                value=parameter_model.one_euro_filter_parameters.derivative_cutoff,
-                tip="Cutoff frequency used to smooth the estimated derivative.",
-            ),
-            dict(
                 name=KALMAN_PROCESS_NOISE,
                 type="float",
                 value=parameter_model.kalman_filter_parameters.process_noise,
@@ -262,7 +238,7 @@ def create_post_processing_parameter_group(
                 tip="Maximum consecutive missing frames predicted by the causal Kalman filter.",
             ),
         ],
-        tip="Forward-only Kalman gap filling and One Euro smoothing; no future frames are used.",
+        tip="Forward-only Kalman gap filling; no future frames are used.",
     )
 
 
@@ -298,17 +274,11 @@ def extract_parameter_model_from_parameter_tree(
         ),
         post_processing_parameters_model=PostProcessingParametersModel(
             framerate=parameter_values_dictionary[POST_PROCESSING_FRAME_RATE],
-            one_euro_filter_parameters=OneEuroFilterParametersModel(
-                min_cutoff=parameter_values_dictionary[ONE_EURO_MIN_CUTOFF],
-                beta=parameter_values_dictionary[ONE_EURO_BETA],
-                derivative_cutoff=parameter_values_dictionary[ONE_EURO_DERIVATIVE_CUTOFF],
-            ),
             kalman_filter_parameters=KalmanFilterParametersModel(
                 process_noise=parameter_values_dictionary[KALMAN_PROCESS_NOISE],
                 measurement_noise=parameter_values_dictionary[KALMAN_MEASUREMENT_NOISE],
             ),
             max_gap_to_fill=parameter_values_dictionary[MAX_GAP_TO_FILL],
-            run_one_euro_filter=parameter_values_dictionary[RUN_ONE_EURO_FILTER_NAME],
         ),
     )
 

@@ -29,18 +29,9 @@ def test_causal_post_processing_is_prefix_invariant():
 
 def test_kalman_only_fills_up_to_maximum_gap():
     data = _sample_data()
-    parameters = PostProcessingParametersModel(max_gap_to_fill=2, run_one_euro_filter=False)
+    parameters = PostProcessingParametersModel(max_gap_to_fill=2)
     result = causally_post_process_skeleton(data, parameters)
 
     assert np.isfinite(result[5:7, 0, 0]).all()
     assert np.isnan(result[7, 0, 0])
     assert np.isnan(result[:3, 0, 2]).all()
-
-
-def test_one_euro_output_changes_with_current_measurement():
-    data = np.zeros((5, 1, 3), dtype=float)
-    data[-1] = 10.0
-    result = causally_post_process_skeleton(data, PostProcessingParametersModel())
-
-    assert np.all(result[-1] > 0.0)
-    assert np.all(result[-1] < 10.0)

@@ -22,7 +22,6 @@ from freemocap.gui.qt.widgets.control_panel.process_mocap_data_panel.parameter_g
     extract_parameter_model_from_parameter_tree,
     RUN_IMAGE_TRACKING_NAME,
     RUN_3D_TRIANGULATION_NAME,
-    RUN_ONE_EURO_FILTER_NAME,
     NUMBER_OF_PROCESSES_PARAMETER_NAME, OUTLIER_REJECTION_MINIMUM_CAMERAS_FOR_TRIANGULATION,
     OUTLIER_REJECTION_TREE_NAME, USE_OUTLIER_REJECTION_METHOD, OUTLIER_REJECTION_MAXIMUM_CAMERAS_TO_DROP,
     OUTLIER_REJECTION_TARGET_REPROJECTION_ERROR, FLATTEN_SINGLE_CAMERA_DATA,
@@ -198,7 +197,6 @@ class ProcessMotionCaptureDataPanel(QWidget):
                     name="Post Processing (data cleaning)",
                     type="group",
                     children=[
-                        self._create_new_run_this_step_parameter(run_step_name=RUN_ONE_EURO_FILTER_NAME),
                         create_post_processing_parameter_group(
                             session_processing_parameter_model.post_processing_parameters_model
                         ),
