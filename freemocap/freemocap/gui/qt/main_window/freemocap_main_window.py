@@ -365,6 +365,7 @@ class MainWindow(QMainWindow):
         self,
         image,
         raw_pose_xyz,
+        filtered_pose_xyz,
         filtered_plot_image,
         filtered_plot_dpi,
     ):
@@ -372,6 +373,7 @@ class MainWindow(QMainWindow):
             self._realtime_preview_writer.submit_frame(
                 image,
                 raw_pose_xyz,
+                filtered_pose_xyz,
                 filtered_plot_image,
                 filtered_plot_dpi,
             )
