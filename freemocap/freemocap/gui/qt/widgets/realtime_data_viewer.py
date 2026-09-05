@@ -1,7 +1,16 @@
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QLabel, QSplitter, QStackedLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSplitter,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
+)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from skelly_viewer import SkellyViewer
@@ -17,7 +26,9 @@ except ImportError:
 class RealtimeDataViewer(QWidget):
     """Offline SkellyViewer plus a live annotated-video and pose display."""
 
-    composite_frame_ready_signal = Signal(QImage, object, QImage, float)
+    composite_frame_ready_signal = Signal(
+        QImage, object, object, object, object, QImage, float
+    )
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -29,12 +40,37 @@ class RealtimeDataViewer(QWidget):
         self._figure = Figure()
         self._canvas = FigureCanvasQTAgg(self._figure)
         self._axes = self._figure.add_subplot(111, projection="3d")
+        self._selected_filter = "one_euro"
+        self._latest_one_euro_pose = None
+        self._latest_kalman_pose = None
         self._initialize_plot()
+
+        filter_controls = QHBoxLayout()
+        filter_controls.addWidget(QLabel("Displayed filter:"))
+        self._filter_button_group = QButtonGroup(self)
+        self._filter_button_group.setExclusive(True)
+        self._one_euro_button = QPushButton("One Euro Filter")
+        self._one_euro_button.setCheckable(True)
+        self._one_euro_button.setChecked(True)
+        self._one_euro_button.clicked.connect(
+            lambda: self._select_displayed_filter("one_euro")
+        )
+        self._kalman_button = QPushButton("Kalman Filter")
+        self._kalman_button.setCheckable(True)
+        self._kalman_button.clicked.connect(
+            lambda: self._select_displayed_filter("kalman")
+        )
+        self._filter_button_group.addButton(self._one_euro_button)
+        self._filter_button_group.addButton(self._kalman_button)
+        filter_controls.addWidget(self._one_euro_button)
+        filter_controls.addWidget(self._kalman_button)
+        filter_controls.addStretch()
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._live_video_label)
         splitter.addWidget(self._canvas)
         live_layout = QVBoxLayout(self._live_viewer)
+        live_layout.addLayout(filter_controls)
         live_layout.addWidget(splitter)
 
         self._stack = QStackedLayout(self)
@@ -56,7 +92,9 @@ class RealtimeDataViewer(QWidget):
         self,
         image: QImage,
         raw_pose_xyz: np.ndarray,
-        filtered_pose_xyz: np.ndarray,
+        one_euro_pose_xyz: np.ndarray,
+        kalman_pose_xyz: np.ndarray,
+        kalman_one_euro_pose_xyz: np.ndarray,
     ) -> None:
         pixmap = QPixmap.fromImage(image)
         self._live_video_label.setPixmap(
@@ -66,7 +104,14 @@ class RealtimeDataViewer(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
-        self._update_pose(filtered_pose_xyz)
+        self._latest_one_euro_pose = one_euro_pose_xyz.copy()
+        self._latest_kalman_pose = kalman_pose_xyz.copy()
+        displayed_pose = (
+            self._latest_one_euro_pose
+            if self._selected_filter == "one_euro"
+            else self._latest_kalman_pose
+        )
+        self._update_pose(displayed_pose)
         filtered_plot_image = self._matplotlib_canvas_to_image(self._canvas)
         effective_dpi = (
             filtered_plot_image.width() / self._figure.get_figwidth()
@@ -74,6 +119,9 @@ class RealtimeDataViewer(QWidget):
         self.composite_frame_ready_signal.emit(
             image.copy(),
             raw_pose_xyz.copy(),
+            one_euro_pose_xyz.copy(),
+            kalman_pose_xyz.copy(),
+            kalman_one_euro_pose_xyz.copy(),
             filtered_plot_image,
             effective_dpi,
         )
@@ -89,9 +137,23 @@ class RealtimeDataViewer(QWidget):
         self._offline_viewer.generate_video_display(video_folder_path)
 
     def _initialize_plot(self) -> None:
-        configure_realtime_pose_axes(self._axes, title="Real-time filtered pose")
+        configure_realtime_pose_axes(self._axes, title="Real-time One Euro pose")
         self._points = self._axes.scatter([], [], [], s=12)
         self._bones = [self._axes.plot([], [], [], linewidth=2)[0] for _ in POSE_CONNECTIONS]
+
+    def _select_displayed_filter(self, filter_name: str) -> None:
+        self._selected_filter = filter_name
+        if filter_name == "one_euro":
+            pose = self._latest_one_euro_pose
+            title = "Real-time One Euro pose"
+        else:
+            pose = self._latest_kalman_pose
+            title = "Real-time Kalman pose"
+        self._axes.set_title(title)
+        if pose is not None:
+            self._update_pose(pose)
+        else:
+            self._canvas.draw()
 
     def _update_pose(self, pose_xyz: np.ndarray) -> None:
         if pose_xyz.shape != (33, 3) or not np.isfinite(pose_xyz).any():

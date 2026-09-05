@@ -13,6 +13,9 @@ from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import proj3d
 
 from freemocap.gui.qt.utilities.realtime_pose_plot import configure_realtime_pose_axes
+from freemocap.utilities.realtime_jitter_analysis import (
+    save_filter_comparison_data_and_jitter_report,
+)
 
 try:
     from mediapipe.python.solutions.pose import POSE_CONNECTIONS
@@ -69,6 +72,9 @@ class RealtimePreviewWriter(QThread):
         self,
         annotated_image: QImage,
         raw_pose_xyz: np.ndarray,
+        one_euro_pose_xyz: np.ndarray,
+        kalman_pose_xyz: np.ndarray,
+        kalman_one_euro_pose_xyz: np.ndarray,
         filtered_plot_image: QImage,
         filtered_plot_dpi: float,
     ) -> None:
@@ -99,6 +105,9 @@ class RealtimePreviewWriter(QThread):
                     time.monotonic() - self._recording_started_at,
                     annotated_image.copy(),
                     np.asarray(raw_pose_xyz, dtype=float).copy(),
+                    np.asarray(one_euro_pose_xyz, dtype=float).copy(),
+                    np.asarray(kalman_pose_xyz, dtype=float).copy(),
+                    np.asarray(kalman_one_euro_pose_xyz, dtype=float).copy(),
                     filtered_plot_image.copy(),
                     self._raw_plot_template,
                     self._video_title_overlay,
@@ -114,6 +123,11 @@ class RealtimePreviewWriter(QThread):
         writer = None
         last_frame = None
         written_frame_count = 0
+        pose_timestamps = []
+        raw_pose_frames = []
+        one_euro_pose_frames = []
+        kalman_pose_frames = []
+        kalman_one_euro_pose_frames = []
         try:
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
             while not self._stop_requested.is_set() or not self._frames.empty():
@@ -122,12 +136,21 @@ class RealtimePreviewWriter(QThread):
                         elapsed_seconds,
                         annotated_image,
                         raw_pose_xyz,
+                        one_euro_pose_xyz,
+                        kalman_pose_xyz,
+                        kalman_one_euro_pose_xyz,
                         filtered_plot_image,
                         raw_plot_template,
                         video_title_overlay,
                     ) = self._frames.get(timeout=0.05)
                 except queue.Empty:
                     continue
+
+                pose_timestamps.append(elapsed_seconds)
+                raw_pose_frames.append(raw_pose_xyz)
+                one_euro_pose_frames.append(one_euro_pose_xyz)
+                kalman_pose_frames.append(kalman_pose_xyz)
+                kalman_one_euro_pose_frames.append(kalman_one_euro_pose_xyz)
 
                 raw_plot_frame = self._render_raw_pose(
                     raw_plot_template,
@@ -180,6 +203,17 @@ class RealtimePreviewWriter(QThread):
                 writer.release()
 
         if writer is not None:
+            save_filter_comparison_data_and_jitter_report(
+                preview_output_path=self.output_path,
+                timestamps=np.asarray(pose_timestamps, dtype=float),
+                raw_pose=np.asarray(raw_pose_frames, dtype=float),
+                one_euro_pose=np.asarray(one_euro_pose_frames, dtype=float),
+                kalman_pose=np.asarray(kalman_pose_frames, dtype=float),
+                kalman_one_euro_pose=np.asarray(
+                    kalman_one_euro_pose_frames,
+                    dtype=float,
+                ),
+            )
             logger.info(f"Saved real-time preview to {self.output_path}")
             self.preview_saved_signal.emit(str(self.output_path))
 

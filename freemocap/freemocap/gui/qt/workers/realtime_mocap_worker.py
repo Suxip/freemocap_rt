@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class RealtimeMocapWorker(QThread):
     """Track only the newest camera frame so the GUI cannot accumulate lag."""
 
-    frame_processed_signal = Signal(QImage, object, object)
+    frame_processed_signal = Signal(QImage, object, object, object, object)
     processing_error_signal = Signal(str)
 
     def __init__(self, parent=None):
@@ -68,6 +68,20 @@ class RealtimeMocapWorker(QThread):
                 beta=0.007,
                 derivative_cutoff=1.0,
             )
+            combined_gap_filler = KalmanGapFiller(
+                shape=(33, 3),
+                sampling_rate=30.0,
+                process_noise=1.0,
+                measurement_noise=10.0,
+                max_gap_to_fill=10,
+            )
+            combined_one_euro_filter = OneEuroFilter(
+                shape=(33, 3),
+                sampling_rate=30.0,
+                min_cutoff=1.0,
+                beta=0.007,
+                derivative_cutoff=1.0,
+            )
             while True:
                 with self._condition:
                     while (
@@ -88,15 +102,23 @@ class RealtimeMocapWorker(QThread):
                 tracked_objects = tracker.process_image(bgr_image)
                 pose_landmarks = tracked_objects["pose_landmarks"].extra["landmarks"]
                 raw_pose_xyz = self._pose_to_array(pose_landmarks)
-                filtered_pose_xyz = one_euro_filter.process_frame(
-                    gap_filler.process_frame(raw_pose_xyz.copy())
+                # Run both causal filters independently from the exact same
+                # raw MediaPipe sample; neither filtered result feeds the other.
+                one_euro_pose_xyz = one_euro_filter.process_frame(
+                    raw_pose_xyz.copy()
+                )
+                kalman_pose_xyz = gap_filler.process_frame(raw_pose_xyz.copy())
+                kalman_one_euro_pose_xyz = combined_one_euro_filter.process_frame(
+                    combined_gap_filler.process_frame(raw_pose_xyz.copy())
                 )
                 annotated_rgb = cv2.cvtColor(tracker.annotated_image, cv2.COLOR_BGR2RGB)
                 annotated_qimage = self._rgb_array_to_qimage(annotated_rgb)
                 self.frame_processed_signal.emit(
                     annotated_qimage,
                     raw_pose_xyz,
-                    filtered_pose_xyz,
+                    one_euro_pose_xyz,
+                    kalman_pose_xyz,
+                    kalman_one_euro_pose_xyz,
                 )
         except Exception as error:
             logger.exception("Real-time motion capture failed")
