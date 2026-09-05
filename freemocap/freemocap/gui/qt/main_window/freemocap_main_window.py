@@ -15,10 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
     QHBoxLayout,
 )
-from skelly_viewer import SkellyViewer
 from skellycam import (
     SkellyCamParameterTreeWidget,
-    SkellyCamWidget,
 )
 from tqdm import tqdm
 
@@ -62,12 +60,17 @@ from freemocap.gui.qt.widgets.home_widget import (
 )
 from freemocap.gui.qt.widgets.import_videos_wizard import ImportVideosWizard
 from freemocap.gui.qt.widgets.log_view_widget import LogViewWidget
+from freemocap.gui.qt.widgets.live_skellycam_widget import LiveSkellyCamWidget
 from freemocap.gui.qt.widgets.opencv_conflict_dialog import OpencvConflictDialog
+from freemocap.gui.qt.widgets.realtime_data_viewer import RealtimeDataViewer
 from freemocap.gui.qt.widgets.release_notes_dialogs.tabbed_release_notes_dialog import TabbedReleaseNotesDialog
 from freemocap.gui.qt.widgets.set_data_folder_dialog import SetDataFolderDialog
 from freemocap.gui.qt.widgets.welcome_screen_dialog import WelcomeScreenDialog
 from freemocap.gui.qt.workers.download_sample_data_thread_worker import DownloadDataThreadWorker
 from freemocap.gui.qt.workers.export_to_blender_thread_worker import ExportToBlenderThreadWorker
+from freemocap.gui.qt.workers.imported_video_frame_source import ImportedVideoFrameSource
+from freemocap.gui.qt.workers.realtime_mocap_worker import RealtimeMocapWorker
+from freemocap.gui.qt.workers.realtime_preview_writer import RealtimePreviewWriter
 # reboot GUI method based on this - https://stackoverflow.com/a/56563926/14662833
 from freemocap.system.open_file import open_file
 from freemocap.system.paths_and_filenames.file_and_folder_names import (
@@ -117,6 +120,12 @@ class MainWindow(QMainWindow):
         self._gui_state: GuiState = load_gui_state(get_gui_state_json_path())
 
         self._kill_thread_event = multiprocessing.Event()
+        self._realtime_worker = None
+        self._realtime_preview_writer = None
+        self._imported_video_frame_source = None
+        self._imported_realtime_processing_active = False
+        self._realtime_processing_active = False
+        self._realtime_camera_id = None
 
         self._active_recording_info_widget = ActiveRecordingInfoWidget(parent=self)
         self._active_recording_info_widget.new_active_recording_selected_signal.connect(
@@ -199,6 +208,194 @@ class MainWindow(QMainWindow):
         self._controller_group_box.show()
         self._skellycam_widget.detect_available_cameras()
 
+    def _create_realtime_mocap_worker(self) -> RealtimeMocapWorker:
+        """Create the single processing pipeline used by live and imported frames."""
+        worker = RealtimeMocapWorker(parent=self)
+        worker.frame_processed_signal.connect(
+            self._skelly_viewer_widget.update_live_frame
+        )
+        worker.processing_error_signal.connect(
+            self._skelly_viewer_widget.show_live_error
+        )
+        return worker
+
+    def _start_realtime_processing(self):
+        if not self._controller_group_box.mocap_videos_radio_button_checked:
+            return
+        self._stop_imported_video_processing()
+        self._stop_realtime_worker()
+        if self._realtime_worker is not None:
+            logger.error("The previous real-time worker is still stopping; cannot start another one yet")
+            return
+        self._realtime_worker = self._create_realtime_mocap_worker()
+        self._realtime_worker.start()
+        self._start_realtime_preview_writer()
+        self._realtime_camera_id = None
+        self._realtime_processing_active = True
+        self._skelly_viewer_widget.start_live()
+        self._central_tab_widget.setCurrentIndex(2)
+        logger.info("Started real-time tracking and visualization")
+
+    def _start_imported_video_realtime_processing(self, video_path: Path) -> None:
+        self._stop_imported_video_processing()
+        self._stop_realtime_worker()
+        if self._realtime_worker is not None:
+            logger.error(
+                "The previous real-time worker is still stopping; "
+                "cannot process the imported video yet"
+            )
+            return
+
+        self._realtime_processing_active = False
+        self._realtime_camera_id = None
+        self._realtime_worker = self._create_realtime_mocap_worker()
+        self._realtime_worker.finished.connect(
+            self._handle_imported_realtime_worker_finished
+        )
+        self._realtime_worker.start()
+        self._start_realtime_preview_writer()
+
+        self._imported_video_frame_source = ImportedVideoFrameSource(
+            video_path=video_path,
+            parent=self,
+        )
+        self._imported_video_frame_source.frame_ready_signal.connect(
+            self._realtime_worker.submit_frame
+        )
+        self._imported_video_frame_source.playback_error_signal.connect(
+            self._skelly_viewer_widget.show_live_error
+        )
+        self._imported_video_frame_source.finished.connect(
+            self._handle_imported_video_source_finished
+        )
+        self._imported_realtime_processing_active = True
+        self._skelly_viewer_widget.start_live()
+        self._central_tab_widget.setCurrentIndex(2)
+        self.statusBar().showMessage(
+            f"Running real-time processing on imported video: {video_path.name}"
+        )
+        self._imported_video_frame_source.start()
+        logger.info("Started real-time processing for imported video: %s", video_path)
+
+    def _handle_imported_video_source_finished(self) -> None:
+        source = self._imported_video_frame_source
+        self._imported_video_frame_source = None
+        if source is not None:
+            source.deleteLater()
+        if (
+            self._imported_realtime_processing_active
+            and self._realtime_worker is not None
+        ):
+            self._realtime_worker.finish_after_pending_frame()
+
+    def _handle_imported_realtime_worker_finished(self) -> None:
+        if not self._imported_realtime_processing_active:
+            return
+        self._imported_realtime_processing_active = False
+        self._stop_imported_video_source()
+        self._stop_realtime_preview_writer()
+        self._skelly_viewer_widget.stop_live()
+        if self._realtime_worker is not None:
+            self._realtime_worker.deleteLater()
+            self._realtime_worker = None
+        active_recording = self._active_recording_info_widget.get_active_recording_info()
+        if active_recording is None:
+            saved_message = "Finished real-time processing of imported video"
+        else:
+            saved_message = (
+                "Finished imported-video processing. Saved recording to: "
+                f"{active_recording.path}"
+            )
+        self.statusBar().showMessage(saved_message)
+        logger.info(saved_message)
+
+    def _stop_imported_video_source(self) -> None:
+        if self._imported_video_frame_source is None:
+            return
+        source = self._imported_video_frame_source
+        if not source.stop():
+            logger.warning("Imported video frame source did not stop within 5 seconds")
+            return
+        source.deleteLater()
+        self._imported_video_frame_source = None
+
+    def _stop_imported_video_processing(self) -> None:
+        if not self._imported_realtime_processing_active:
+            self._stop_imported_video_source()
+            return
+        self._imported_realtime_processing_active = False
+        self._stop_imported_video_source()
+        self._stop_realtime_worker()
+        self._stop_realtime_preview_writer()
+        self._skelly_viewer_widget.stop_live()
+
+    def _stop_realtime_processing(self):
+        self._realtime_processing_active = False
+        self._stop_realtime_worker()
+        self._stop_realtime_preview_writer()
+        self._skelly_viewer_widget.stop_live()
+        logger.info("Stopped real-time tracking and visualization")
+
+    def _stop_realtime_worker(self):
+        if self._realtime_worker is not None:
+            if not self._realtime_worker.stop():
+                logger.warning("Real-time worker did not stop within 10 seconds")
+                return
+            self._realtime_worker.deleteLater()
+            self._realtime_worker = None
+
+    def _start_realtime_preview_writer(self):
+        self._stop_realtime_preview_writer()
+        active_recording = self._active_recording_info_widget.get_active_recording_info()
+        if active_recording is None:
+            logger.warning("Cannot save real-time preview because there is no active recording")
+            return
+        output_folder = Path(active_recording.realtime_preview_folder_path)
+        output_path = output_folder / f"{active_recording.name}_realtime_preview.mp4"
+        self._realtime_preview_writer = RealtimePreviewWriter(output_path=output_path, parent=self)
+        self._realtime_preview_writer.preview_saved_signal.connect(
+            lambda path: logger.info(f"Real-time preview saved: {path}")
+        )
+        self._realtime_preview_writer.writing_error_signal.connect(
+            lambda error: logger.error(f"Real-time preview could not be saved: {error}")
+        )
+        self._realtime_preview_writer.start()
+
+    def _write_realtime_preview_frame(
+        self,
+        image,
+        raw_pose_xyz,
+        filtered_plot_image,
+        filtered_plot_dpi,
+    ):
+        if self._realtime_preview_writer is not None:
+            self._realtime_preview_writer.submit_frame(
+                image,
+                raw_pose_xyz,
+                filtered_plot_image,
+                filtered_plot_dpi,
+            )
+
+    def _stop_realtime_preview_writer(self):
+        if self._realtime_preview_writer is None:
+            return
+        if not self._realtime_preview_writer.stop():
+            logger.warning("Real-time preview writer did not stop within 15 seconds")
+            return
+        self._realtime_preview_writer.deleteLater()
+        self._realtime_preview_writer = None
+
+    @Slot(str, object)
+    def _handle_live_camera_image(self, camera_id: str, image):
+        if not self._realtime_processing_active or self._realtime_worker is None:
+            return
+        # The live preview uses the first active camera. All cameras continue to
+        # be recorded by SkellyCam for the normal synchronized offline pipeline.
+        if self._realtime_camera_id is None:
+            self._realtime_camera_id = camera_id
+        if camera_id == self._realtime_camera_id:
+            self._realtime_worker.submit_frame(image)
+
     def update(self):
         super().update()
 
@@ -225,7 +422,7 @@ class MainWindow(QMainWindow):
     def _create_central_tab_widget(self):
         self._home_widget = HomeWidget(actions=self._actions, gui_state=self._gui_state, parent=self)
 
-        self._skellycam_widget = SkellyCamWidget(
+        self._skellycam_widget = LiveSkellyCamWidget(
             self._create_new_synchronized_videos_folder,
             parent=self,
         )
@@ -237,7 +434,7 @@ class MainWindow(QMainWindow):
             skellycam_widget=self._skellycam_widget, gui_state=self._gui_state, parent=self
         )
 
-        self._skelly_viewer_widget = SkellyViewer()
+        self._skelly_viewer_widget = RealtimeDataViewer(parent=self)
 
         center_tab_widget = CentralTabWidget(
             parent=self,
@@ -252,6 +449,11 @@ class MainWindow(QMainWindow):
         center_tab_widget.set_welcome_tab_enabled(True)
         center_tab_widget.set_camera_view_tab_enabled(True)
         center_tab_widget.set_visualize_data_tab_enabled(True)
+
+        self._skellycam_widget.live_image_signal.connect(self._handle_live_camera_image)
+        self._skelly_viewer_widget.composite_frame_ready_signal.connect(self._write_realtime_preview_frame)
+        self._controller_group_box.motion_capture_recording_started.connect(self._start_realtime_processing)
+        self._controller_group_box.recording_stopped.connect(self._stop_realtime_processing)
 
         return center_tab_widget
 
@@ -387,6 +589,10 @@ class MainWindow(QMainWindow):
 
     def kill_running_threads_and_processes(self):
         logger.info("Killing running threads and processes... ")
+        self._stop_imported_video_processing()
+        self._realtime_processing_active = False
+        self._stop_realtime_worker()
+        self._stop_realtime_preview_writer()
         try:
             self._skellycam_widget.close()
         except Exception as e:
@@ -525,6 +731,7 @@ class MainWindow(QMainWindow):
             logger.error("No videos to import!")
             return
 
+        imported_video_paths = []
         if not synchronization_bool:
             for video_path in tqdm(
                     video_paths,
@@ -542,6 +749,9 @@ class MainWindow(QMainWindow):
                 logger.info(f"Copying video from {video_path} to {destination_path}")
 
                 shutil.copy(video_path, destination_path)
+                imported_video_paths.append(destination_path)
+        else:
+            imported_video_paths = [Path(video_path) for video_path in video_paths]
 
         timestamps_copied = copy_directory_if_contains_timestamps(
             source_dir=Path(video_paths[0]).parent, destination_dir=folder_to_save_videos
@@ -555,6 +765,11 @@ class MainWindow(QMainWindow):
         self._active_recording_info_widget.set_active_recording(
             recording_folder_path=Path(folder_to_save_videos).parent
         )
+        logger.info(
+            "Imported recording saved using the standard recording structure at: %s",
+            Path(folder_to_save_videos).parent,
+        )
+        self._start_imported_video_realtime_processing(imported_video_paths[0])
 
     def _connect_calibration_updates(self):
         self._process_motion_capture_data_panel._calibration_control_panel.control_panel_calibration_updated.connect(
@@ -570,6 +785,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, a0) -> None:
         logger.info("Main window `closeEvent` detected")
+        self._stop_imported_video_processing()
 
         if self._home_widget.consent_to_send_usage_information:
             self._pipedream_pings.update_pings_dict(key="gui_closed", value=True)

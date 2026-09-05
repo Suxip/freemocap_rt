@@ -11,8 +11,7 @@ def calculate_bone_lengths_and_statistics(
         marker_data: Dict[str, np.ndarray], segment_connections: Dict[str, Segment]
 ) -> Dict[str, Dict[str, Union[np.ndarray, float]]]:
     """
-    Calculates bone lengths for each frame and their statistics (median and standard deviation)
-    based on marker positions and segment connections.
+    Calculates bone lengths and a forward-only running length estimate.
 
     Parameters:
     - marker_data: A dictionary containing marker trajectories with marker names as keys and
@@ -21,8 +20,7 @@ def calculate_bone_lengths_and_statistics(
       and dictionaries with 'proximal' and 'distal' markers as values.
 
     Returns:
-    - A dictionary with segment names as keys and dictionaries with lengths, median lengths,
-      and standard deviations as values.
+    - A dictionary containing observed lengths and causal target-length estimates.
     """
     bone_statistics = {}
 
@@ -31,12 +29,23 @@ def calculate_bone_lengths_and_statistics(
         distal_positions = marker_data[segment.distal]
 
         lengths = np.linalg.norm(distal_positions - proximal_positions, axis=1)
-        valid_lengths = lengths[~np.isnan(lengths)]
+        # Estimate the target length from the current and previous frames only. An
+        # expanding mean is deliberately used instead of the whole-recording
+        # median so an early output can never change when later frames arrive.
+        valid = np.isfinite(lengths)
+        cumulative_sum = np.cumsum(np.where(valid, lengths, 0.0))
+        cumulative_count = np.cumsum(valid)
+        causal_length_estimate = np.divide(
+            cumulative_sum,
+            cumulative_count,
+            out=np.full_like(lengths, np.nan, dtype=float),
+            where=cumulative_count > 0,
+        )
 
-        median_length = np.median(valid_lengths)
-        stdev_length = np.std(valid_lengths)
-
-        bone_statistics[segment_name] = {"lengths": lengths, "median": median_length, "stdev": stdev_length}
+        bone_statistics[segment_name] = {
+            "lengths": lengths,
+            "causal_length_estimate": causal_length_estimate,
+        }
 
     return bone_statistics
 
@@ -48,7 +57,7 @@ def enforce_rigid_bones(
         joint_hierarchy: Dict[str, List[str]],
 ) -> Dict[str, np.ndarray]:
     """
-    Enforces rigid bones by adjusting the distal joints of each segment to match the median length.
+    Enforces rigid bones using the target estimate available at each frame.
 
     Parameters:
     - marker_data: The original marker positions.
@@ -62,14 +71,15 @@ def enforce_rigid_bones(
     rigid_marker_data = deepcopy(marker_data)
 
     for segment_name, stats in bone_lengths_and_statistics.items():
-        desired_length = stats["median"]
+        desired_lengths = stats["causal_length_estimate"]
         lengths = stats["lengths"]
 
         segment = segment_connections[segment_name]
         proximal_marker, distal_marker = segment.proximal, segment.distal
 
         for frame_index, current_length in enumerate(lengths):
-            if current_length != desired_length:
+            desired_length = desired_lengths[frame_index]
+            if np.isfinite(current_length) and np.isfinite(desired_length) and current_length != desired_length:
                 proximal_position = marker_data[proximal_marker][frame_index]
                 distal_position = marker_data[distal_marker][frame_index]
                 direction = distal_position - proximal_position

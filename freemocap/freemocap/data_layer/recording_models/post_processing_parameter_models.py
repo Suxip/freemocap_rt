@@ -1,6 +1,6 @@
 import logging
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from skellytracker.trackers.base_tracker.base_tracking_params import BaseTrackingParams
 from skellytracker.trackers.base_tracker.model_info import ModelInfo
 from skellytracker.trackers.mediapipe_tracker.mediapipe_model_info import MediapipeTrackingParams, MediapipeModelInfo
@@ -22,17 +22,23 @@ class AniposeTriangulate3DParametersModel(BaseModel):
     flatten_single_camera_data: bool = True
 
 
-class ButterworthFilterParametersModel(BaseModel):
-    sampling_rate: float = 30
-    cutoff_frequency: float = 7
-    order: int = 4
+class OneEuroFilterParametersModel(BaseModel):
+    min_cutoff: float = 1.0
+    beta: float = 0.007
+    derivative_cutoff: float = 1.0
+
+
+class KalmanFilterParametersModel(BaseModel):
+    process_noise: float = 1.0
+    measurement_noise: float = 10.0
 
 
 class PostProcessingParametersModel(BaseModel):
     framerate: float = 30.0
-    butterworth_filter_parameters: ButterworthFilterParametersModel = ButterworthFilterParametersModel()
+    one_euro_filter_parameters: OneEuroFilterParametersModel = Field(default_factory=OneEuroFilterParametersModel)
+    kalman_filter_parameters: KalmanFilterParametersModel = Field(default_factory=KalmanFilterParametersModel)
     max_gap_to_fill: int = 10
-    run_butterworth_filter: bool = True
+    run_one_euro_filter: bool = True
 
 
 class ProcessingParameterModel(BaseModel):

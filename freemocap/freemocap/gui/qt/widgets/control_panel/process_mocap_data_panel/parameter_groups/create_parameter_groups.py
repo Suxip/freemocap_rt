@@ -7,16 +7,20 @@ from freemocap.data_layer.recording_models.post_processing_parameter_models impo
     ProcessingParameterModel,
     AniposeTriangulate3DParametersModel,
     PostProcessingParametersModel,
-    ButterworthFilterParametersModel,
+    OneEuroFilterParametersModel,
+    KalmanFilterParametersModel,
 )
 
-BUTTERWORTH_ORDER = "Order"
-
-BUTTERWORTH_CUTOFF_FREQUENCY = "Cutoff Frequency"
+ONE_EURO_MIN_CUTOFF = "Minimum Cutoff Frequency"
+ONE_EURO_BETA = "Speed Coefficient (Beta)"
+ONE_EURO_DERIVATIVE_CUTOFF = "Derivative Cutoff Frequency"
+KALMAN_PROCESS_NOISE = "Kalman Process Noise"
+KALMAN_MEASUREMENT_NOISE = "Kalman Measurement Noise"
+MAX_GAP_TO_FILL = "Maximum Gap to Fill"
 
 POST_PROCESSING_FRAME_RATE = "Framerate"
 
-BUTTERWORTH_FILTER_TREE_NAME = "Butterworth Filter"
+CAUSAL_POST_PROCESSING_TREE_NAME = "Causal Post Processing"
 
 OUTLIER_REJECTION_TREE_NAME = "Outlier Rejection"
 
@@ -58,7 +62,7 @@ RUN_IMAGE_TRACKING_NAME = "Run 2d image tracking?"
 
 RUN_3D_TRIANGULATION_NAME = "Run 3d triangulation?"
 
-RUN_BUTTERWORTH_FILTER_NAME = "Run butterworth filter?"
+RUN_ONE_EURO_FILTER_NAME = "Run One Euro filter?"
 
 NUMBER_OF_PROCESSES_PARAMETER_NAME = "Max Number of Processes to Use"
 
@@ -210,31 +214,55 @@ def create_post_processing_parameter_group(
         parameter_model = PostProcessingParametersModel()
 
     return Parameter.create(
-        name=BUTTERWORTH_FILTER_TREE_NAME,
+        name=CAUSAL_POST_PROCESSING_TREE_NAME,
         type="group",
         expanded=False, # collapsed by default
         children=[
             dict(
                 name=POST_PROCESSING_FRAME_RATE,
                 type="float",
-                value=parameter_model.butterworth_filter_parameters.sampling_rate,
+                value=parameter_model.framerate,
                 tip="Framerate of the recording " "TODO - Calculate this from the recorded timestamps....",
             ),
             dict(
-                name=BUTTERWORTH_CUTOFF_FREQUENCY,
+                name=ONE_EURO_MIN_CUTOFF,
                 type="float",
-                value=parameter_model.butterworth_filter_parameters.cutoff_frequency,
-                tip="Oscillations above this frequency will be filtered from the data. ",
+                value=parameter_model.one_euro_filter_parameters.min_cutoff,
+                tip="Lower values smooth more but add more lag.",
             ),
             dict(
-                name=BUTTERWORTH_ORDER,
+                name=ONE_EURO_BETA,
+                type="float",
+                value=parameter_model.one_euro_filter_parameters.beta,
+                tip="Increases responsiveness during fast motion.",
+            ),
+            dict(
+                name=ONE_EURO_DERIVATIVE_CUTOFF,
+                type="float",
+                value=parameter_model.one_euro_filter_parameters.derivative_cutoff,
+                tip="Cutoff frequency used to smooth the estimated derivative.",
+            ),
+            dict(
+                name=KALMAN_PROCESS_NOISE,
+                type="float",
+                value=parameter_model.kalman_filter_parameters.process_noise,
+                tip="Higher values allow the Kalman motion model to change faster.",
+            ),
+            dict(
+                name=KALMAN_MEASUREMENT_NOISE,
+                type="float",
+                value=parameter_model.kalman_filter_parameters.measurement_noise,
+                tip="Higher values place less trust in observed marker positions.",
+            ),
+            dict(
+                name=MAX_GAP_TO_FILL,
                 type="int",
-                value=parameter_model.butterworth_filter_parameters.order,
-                tip="Order of the filter."
-                    "NOTE - I'm not really sure what this parameter does, but this is what I see in other people's Methods sections so....   lol",
+                value=parameter_model.max_gap_to_fill,
+                limits=(0, 10000),
+                tip="Maximum consecutive missing frames predicted by the causal Kalman filter.",
             ),
         ],
-        tip="Low-pass, zero-lag, Butterworth filter to remove high frequency oscillations/noise from the data. ",
+        tip="Forward-only Kalman gap filling and One Euro smoothing; no future frames are used.",
     )
 
 
@@ -270,12 +298,17 @@ def extract_parameter_model_from_parameter_tree(
         ),
         post_processing_parameters_model=PostProcessingParametersModel(
             framerate=parameter_values_dictionary[POST_PROCESSING_FRAME_RATE],
-            butterworth_filter_parameters=ButterworthFilterParametersModel(
-                sampling_rate=parameter_values_dictionary[POST_PROCESSING_FRAME_RATE],
-                cutoff_frequency=parameter_values_dictionary[BUTTERWORTH_CUTOFF_FREQUENCY],
-                order=parameter_values_dictionary[BUTTERWORTH_ORDER],
+            one_euro_filter_parameters=OneEuroFilterParametersModel(
+                min_cutoff=parameter_values_dictionary[ONE_EURO_MIN_CUTOFF],
+                beta=parameter_values_dictionary[ONE_EURO_BETA],
+                derivative_cutoff=parameter_values_dictionary[ONE_EURO_DERIVATIVE_CUTOFF],
             ),
-            run_butterworth_filter=parameter_values_dictionary[RUN_BUTTERWORTH_FILTER_NAME],
+            kalman_filter_parameters=KalmanFilterParametersModel(
+                process_noise=parameter_values_dictionary[KALMAN_PROCESS_NOISE],
+                measurement_noise=parameter_values_dictionary[KALMAN_MEASUREMENT_NOISE],
+            ),
+            max_gap_to_fill=parameter_values_dictionary[MAX_GAP_TO_FILL],
+            run_one_euro_filter=parameter_values_dictionary[RUN_ONE_EURO_FILTER_NAME],
         ),
     )
 

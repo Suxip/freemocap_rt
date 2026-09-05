@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 class CameraControllerGroupBox(QGroupBox):
     controller_group_box_calibration_updated = Signal()
+    motion_capture_recording_started = Signal()
+    recording_stopped = Signal()
 
     def __init__(self, skellycam_widget: SkellyCamWidget, gui_state: GuiState, parent=None):
         super().__init__(parent=parent)
@@ -67,6 +69,8 @@ class CameraControllerGroupBox(QGroupBox):
         self._mocap_videos_radio_button.toggled.connect(self._set_record_button_text)
         self._skellycam_widget.cameras_connected_signal.connect(lambda: self._start_recording_button.setEnabled(True))
         self._stop_recording_button.clicked.connect(self._set_record_button_text)
+        self._start_recording_button.clicked.connect(self._emit_motion_capture_recording_started)
+        self._stop_recording_button.clicked.connect(self.recording_stopped.emit)
 
         self._auto_process_videos_checkbox.toggled.connect(self._on_auto_process_videos_checkbox_changed)
         self._generate_jupyter_notebook_checkbox.toggled.connect(self._on_generate_jupyter_notebook_checkbox_changed)
@@ -114,6 +118,10 @@ class CameraControllerGroupBox(QGroupBox):
             return "calibration"
         else:
             raise ValueError("No recording type selected")
+
+    def _emit_motion_capture_recording_started(self) -> None:
+        if self.mocap_videos_radio_button_checked:
+            self.motion_capture_recording_started.emit()
 
     def _create_mocap_recording_option_layout(self) -> QHBoxLayout:
         hbox = QHBoxLayout()
