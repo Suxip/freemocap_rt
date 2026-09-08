@@ -24,6 +24,8 @@ This project investigates a fully causal workflow in which each output depends o
 - Automatic NumPy data export and aggregate jitter reports
 - FreeMoCap-compatible timestamped recording folders
 
+![Real-time processing preview showing the video recording, raw MediaPipe pose, and filtered One Euro pose](freemocap/docs/images/realtime-processing-preview.png)
+
 ## Processing architecture
 
 ```text
